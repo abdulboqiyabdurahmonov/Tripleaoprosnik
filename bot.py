@@ -3,6 +3,7 @@ import os
 import json
 import logging
 from typing import List, Dict, Any, Optional
+from aiogram.client.default import DefaultBotProperties
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
