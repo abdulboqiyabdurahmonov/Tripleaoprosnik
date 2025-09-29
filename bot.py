@@ -245,30 +245,37 @@ def set_lang(user_id: int, lang: str):
     get_user_state(user_id)["lang"] = lang
 
 # ---------- Keyboards ----------
-def kb_main():
+def kb_lang_choice():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Пройти опрос (2 минуты)", callback_data="start_survey")],
-        [InlineKeyboardButton(text="📞 Оставить контакт без опроса", callback_data="leave_contact")],
+        [InlineKeyboardButton(text=TEXTS["ru"]["lang_ru"], callback_data="lang:ru"),
+         InlineKeyboardButton(text=TEXTS["uz"]["lang_uz"], callback_data="lang:uz")]
     ])
 
-def kb_features(selected: set, options: List[str]) -> InlineKeyboardMarkup:
+def kb_main(lang: str):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text_for(lang, "main_take_survey"), callback_data="start_survey")],
+        [InlineKeyboardButton(text=text_for(lang, "main_leave_contact"), callback_data="leave_contact")],
+    ])
+
+def kb_features(selected: set, options: List[str], lang: str) -> InlineKeyboardMarkup:
     rows = []
     for opt in options:
         mark = "✅" if opt in selected else "☐"
         rows.append([InlineKeyboardButton(text=f"{mark} {opt}", callback_data=f"feat:{opt}")])
-    rows.append([InlineKeyboardButton(text="Готово ✅", callback_data="feat_done")])
-    rows.append([InlineKeyboardButton(text="Отмена ↩️", callback_data="cancel")])
+    rows.append([InlineKeyboardButton(text=text_for(lang, "features_done"), callback_data="feat_done")])
+    rows.append([InlineKeyboardButton(text=text_for(lang, "cancel"), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def kb_yes_no() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Да", callback_data="choice:Да"),
-        InlineKeyboardButton(text="Нет", callback_data="choice:Нет"),
-    ], [InlineKeyboardButton(text="Отмена ↩️", callback_data="cancel")]])
+def kb_yes_no(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text_for(lang, "yes"), callback_data="choice:Да"),
+         InlineKeyboardButton(text=text_for(lang, "no"), callback_data="choice:Нет")],
+        [InlineKeyboardButton(text=text_for(lang, "cancel"), callback_data="cancel")]
+    ])
 
-def kb_request_contact() -> ReplyKeyboardMarkup:
+def kb_request_contact(lang: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Отправить контакт", request_contact=True)]],
+        keyboard=[[KeyboardButton(text=text_for(lang, "phone_button"), request_contact=True)]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
