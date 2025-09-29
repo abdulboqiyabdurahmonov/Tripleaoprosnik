@@ -283,11 +283,8 @@ def kb_request_contact(lang: str) -> ReplyKeyboardMarkup:
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     st = get_user_state(message.from_user.id)
-    if not st.get("lang"):
-        await message.answer(text_for("ru", "choose_lang"), reply_markup=kb_lang_choice())
-        return
-    lang = st["lang"]
-    await message.answer(text_for(lang, "start_msg"), reply_markup=kb_main(lang))
+    # ВСЕГДА показываем выбор языка на /start
+    await message.answer(text_for(st.get("lang") or "ru", "choose_lang"), reply_markup=kb_lang_choice())
 
 @router.message(Command("lang"))
 async def cmd_lang(message: Message):
@@ -299,6 +296,11 @@ async def cb_set_lang(call: CallbackQuery):
     set_lang(call.from_user.id, lang)
     await call.message.answer(text_for(lang, "start_msg"), reply_markup=kb_main(lang))
     await call.answer()
+
+@router.message(Command("reset"))
+async def cmd_reset(message: Message):
+    STATE.pop(message.from_user.id, None)
+    await message.answer("Сбросил состояние. Нажмите /start.")
 
 @router.callback_query(F.data == "start_survey")
 async def cb_start_survey(call: CallbackQuery):
