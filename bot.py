@@ -208,16 +208,17 @@ FEATURES = [
     "Видимость в агрегаторе (витрина)",
 ]
 
-SURVEY: List[Dict[str, Any]] = [
-    {"key": "company", "text": "Как называется ваш автопарк/компания?", "type": "text"},
-    {"key": "city", "text": "В каком городе вы работаете?", "type": "text"},
-    {"key": "fleet_size", "text": "Сколько машин в автопарке (примерно)?", "type": "text"},
-    {"key": "lead_channels", "text": "Где сейчас берёте клиентов? (Instagram, Telegram, сайт, Avtoelon и т.п.)", "type": "text"},
-    {"key": "features", "text": "Какие функции для вас важны? Отметьте кнопками, затем нажмите «Готово».", "type": "multiselect", "options": FEATURES},
-    {"key": "pilot_interest", "text": "Готовы участвовать в пилоте? (Да/Нет)", "type": "choice", "options": ["Да", "Нет"]},
-    {"key": "contact_name", "text": "Как связаться: контактное лицо (ФИО)?", "type": "text"},
-    {"key": "contact_phone", "text": "Оставьте номер телефона (или нажмите кнопку ниже «Отправить контакт»).", "type": "phone"},
+SURVEY_KEYS: List[Dict[str, Any]] = [
+    {"key": "company", "text_key": "q_company", "type": "text"},
+    {"key": "city", "text_key": "q_city", "type": "text"},
+    {"key": "fleet_size", "text_key": "q_fleet", "type": "text"},
+    {"key": "lead_channels", "text_key": "q_leads", "type": "text"},
+    {"key": "features", "text_key": "q_features", "type": "multiselect"},
+    {"key": "pilot_interest", "text_key": "q_pilot", "type": "choice", "options": ["Да", "Нет"]},
+    {"key": "contact_name", "text_key": "q_contact_name", "type": "text"},
+    {"key": "contact_phone", "text_key": "q_contact_phone", "type": "phone"},
 ]
+
 
 # ---------- Bot / Dispatcher ----------
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
