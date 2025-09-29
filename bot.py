@@ -144,10 +144,10 @@ def get_user_state(user_id: int) -> Dict[str, Any]:
 
 # ---------- Keyboards ----------
 def kb_main():
-    return InlineKeyboardMarkup(inline_keyboard=[[
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Пройти опрос (2 минуты)", callback_data="start_survey")],
-        [InlineKeyboardButton(text="📞 Оставить контакт без опроса", callback_data="leave_contact")]
-    ]])
+        [InlineKeyboardButton(text="📞 Оставить контакт без опроса", callback_data="leave_contact")],
+    ])
 
 def kb_features(selected: set, options: List[str]) -> InlineKeyboardMarkup:
     rows = []
