@@ -19,6 +19,100 @@ import gspread
 from google.oauth2 import service_account
 from datetime import datetime
 
+# ---------- i18n / Locales ----------
+LANGS = ("ru", "uz")
+
+TEXTS = {
+    "ru": {
+        "choose_lang": "Выберите язык / Tilni tanlang:",
+        "lang_ru": "Русский",
+        "lang_uz": "O‘zbekcha",
+        "start_msg": (
+            "Привет! Мы готовим платформу, которая помогает автопаркам получать клиентов напрямую.\n"
+            "Хотим учесть ваши пожелания — ответьте на пару вопросов 🙌"
+        ),
+        "main_take_survey": "📝 Пройти опрос (2 минуты)",
+        "main_leave_contact": "📞 Оставить контакт без опроса",
+        "cancelled": "Окей, остановил опрос. Возвращайтесь, когда будет удобно.",
+        "press_buttons": "Нажмите, пожалуйста, кнопки под сообщением.",
+        "thanks": "Спасибо! 👍",
+        "done_ok": "Принято ✅",
+        "ans": "Ответ",
+        "phone_button": "Отправить контакт",
+        "yes": "Да", "no": "Нет",
+        "features_done": "Готово ✅",
+        "cancel": "Отмена ↩️",
+        "survey_intro": "Начнём! Можно остановиться в любой момент командой /cancel.",
+        "saved_ok": "Спасибо! Ваши ответы сохранены. Мы свяжемся с вами по итогам беты 🙌",
+        "saved_local": "Спасибо! Ответы получены. (Не смог записать в таблицу — сохраняю у себя. Мы всё равно свяжемся.)",
+        # Questions:
+        "q_company": "Как называется ваш автопарк/компания?",
+        "q_city": "В каком городе вы работаете?",
+        "q_fleet": "Сколько машин в автопарке (примерно)?",
+        "q_leads": "Где сейчас берёте клиентов? (Instagram, Telegram, сайт, Avtoelon и т.п.)",
+        "q_features": "Какие функции для вас важны? Отметьте кнопками, затем нажмите «Готово».",
+        "q_pilot": "Готовы участвовать в пилоте? (Да/Нет)",
+        "q_contact_name": "Как связаться: контактное лицо (ФИО)?",
+        "q_contact_phone": "Оставьте номер телефона (или нажмите кнопку ниже «Отправить контакт»).",
+    },
+    "uz": {
+        "choose_lang": "Tilni tanlang / Выберите язык:",
+        "lang_ru": "Русский",
+        "lang_uz": "O‘zbekcha",
+        "start_msg": (
+            "Assalomu alaykum! Biz avtoparklarga mijozlarni bevosita jalb qilishga yordam beradigan platforma tayyorlayapmiz.\n"
+            "Sizning fikrlaringiz muhim — iltimos, 2–3ta qisqa savolga javob bering 🙌"
+        ),
+        "main_take_survey": "📝 So‘rovnoma (2 daqiqa)",
+        "main_leave_contact": "📞 So‘rovnomasiz kontakt qoldirish",
+        "cancelled": "Yaxshi, so‘rovnoma to‘xtatildi. Qulay vaqtda qaytib kelishingiz mumkin.",
+        "press_buttons": "Iltimos, pastdagi tugmalardan foydalaning.",
+        "thanks": "Rahmat! 👍",
+        "done_ok": "Qabul qilindi ✅",
+        "ans": "Javob",
+        "phone_button": "Kontaktni yuborish",
+        "yes": "Ha", "no": "Yo‘q",
+        "features_done": "Tayyor ✅",
+        "cancel": "Bekor qilish ↩️",
+        "survey_intro": "Boshladik! Istalgan payt /cancel buyrug‘i bilan to‘xtatishingiz mumkin.",
+        "saved_ok": "Rahmat! Javoblaringiz saqlandi. Beta natijalari bo‘yicha bog‘lanamiz 🙌",
+        "saved_local": "Rahmat! Javoblar qabul qilindi. (Jadvalga yozib bo‘lmadi — vaqtincha o‘zimda saqladim.)",
+        # Questions (UZ):
+        "q_company": "Avtopark/kompaniya nomi qanday?",
+        "q_city": "Qaysi shaharda faoliyat yuritasiz?",
+        "q_fleet": "Avtoparkda taxminan nechta avtomobil bor?",
+        "q_leads": "Hozir mijozlarni qayerdan topasiz? (Instagram, Telegram, sayt, Avtoelon va h.k.)",
+        "q_features": "Siz uchun qaysi funksiyalar muhim? Tugmalar orqali belgilang, so‘ng «Tayyor»ni bosing.",
+        "q_pilot": "Pilotda ishtirok etishga tayyormisiz? (Ha/Yo‘q)",
+        "q_contact_name": "Aloqa uchun mas’ul shaxs (F.I.Sh.)?",
+        "q_contact_phone": "Telefon raqamingizni qoldiring (yoki pastdagi «Kontaktni yuborish» tugmasini bosing).",
+    }
+}
+
+FEATURES = {
+    "ru": [
+        "Онлайн-оплата (Click/Payme)",
+        "Рейтинг клиентов (скоринг)",
+        "Аналитика и отчёты",
+        "Админ-панель в Telegram",
+        "API/1C интеграции",
+        "Видимость в агрегаторе (витрина)",
+    ],
+    "uz": [
+        "Onlayn to‘lov (Click/Payme)",
+        "Mijozlar reytingi (skoring)",
+        "Analitika va hisobotlar",
+        "Telegramda admin panel",
+        "API/1C integratsiyalari",
+        "Aggregator vitrinasida ko‘rinish",
+    ],
+}
+
+def text_for(lang: str, key: str) -> str:
+    if lang not in LANGS:
+        lang = "ru"
+    return TEXTS[lang][key]
+
 # ---------- Config & Logging ----------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger("survey-bot")
