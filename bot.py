@@ -232,9 +232,17 @@ STATE: Dict[int, Dict[str, Any]] = {}
 def get_user_state(user_id: int) -> Dict[str, Any]:
     st = STATE.get(user_id)
     if not st:
-        st = {"q": 0, "answers": {}, "features_selected": set()}
+        st = {"q": 0, "answers": {}, "features_selected": set(), "lang": "ru"}
         STATE[user_id] = st
     return st
+
+def get_lang(user_id: int) -> str:
+    return get_user_state(user_id).get("lang", "ru")
+
+def set_lang(user_id: int, lang: str):
+    if lang not in LANGS:
+        lang = "ru"
+    get_user_state(user_id)["lang"] = lang
 
 # ---------- Keyboards ----------
 def kb_main():
