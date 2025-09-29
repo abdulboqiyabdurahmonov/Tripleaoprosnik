@@ -364,16 +364,15 @@ app = FastAPI()
 async def healthz():
     return PlainTextResponse("ok")
 
-@app.api_route("/set-webhook", methods=["GET", "POST"])
-async def set_webhook():
-    if not BASE_URL:
-        return {"ok": False, "error": "BASE_URL is not set"}
-    await bot.set_webhook(f"{BASE_URL}/webhook", drop_pending_updates=True)
-    return {"ok": True, "url": f"{BASE_URL}/webhook"}
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update.model_validate(data)
     await dp.feed_update(bot, update)
     return {"ok": True}
 
-@app.post("/set-webhook")
+# универсальный эндпоинт для установки вебхука (мы добавляли раньше)
+@app.api_route("/set-webhook", methods=["GET", "POST"])
 async def set_webhook():
     if not BASE_URL:
         return {"ok": False, "error": "BASE_URL is not set"}
