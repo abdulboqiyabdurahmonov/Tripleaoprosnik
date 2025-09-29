@@ -2,13 +2,13 @@
 import os
 import json
 import logging
-from typing import List, Dict, Any, Optional
-from aiogram.client.default import DefaultBotProperties
+from typing import List, Dict, Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.client.default import DefaultBotProperties
 from aiogram.types import (
     Message, CallbackQuery, Update, KeyboardButton, ReplyKeyboardMarkup,
     ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, ContentType
@@ -18,6 +18,7 @@ from aiogram.filters import Command
 import gspread
 from google.oauth2 import service_account
 from datetime import datetime
+
 
 # ---------- i18n / Locales ----------
 LANGS = ("ru", "uz")
@@ -89,7 +90,7 @@ TEXTS = {
     }
 }
 
-FEATURES = {
+FEATURES: Dict[str, List[str]] = {
     "ru": [
         "Онлайн-оплата (Click/Payme)",
         "Рейтинг клиентов (скоринг)",
@@ -113,6 +114,7 @@ def text_for(lang: str, key: str) -> str:
         lang = "ru"
     return TEXTS[lang][key]
 
+
 # ---------- Config & Logging ----------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger("survey-bot")
@@ -123,10 +125,9 @@ if not BOT_TOKEN:
 
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "").strip()
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()  # raw JSON or base64
-
 BASE_URL = os.getenv("BASE_URL", "").strip()  # e.g. https://your-service.onrender.com
-
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}
+
 
 # ---------- Google Sheets Helper ----------
 gc_client = None
@@ -138,9 +139,8 @@ def _init_sheets():
         log.warning("Google Sheets is not fully configured; responses will not be saved to Sheets.")
         return None
 
-    # Accept raw JSON or base64-encoded JSON
     try:
-        sa_info: Dict[str, Any]
+        # Accept raw JSON or base64-encoded JSON
         if GOOGLE_SERVICE_ACCOUNT_JSON.strip().startswith("{"):
             sa_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
         else:
@@ -154,7 +154,8 @@ def _init_sheets():
         )
         gc_client = gspread.authorize(creds)
         sheet = gc_client.open_by_key(GOOGLE_SHEET_ID).sheet1
-        # Ensure header row exists
+
+        # Ensure header row exists (with lang)
         header = sheet.row_values(1)
         wanted = [
             "timestamp", "lang", "user_id", "username", "company", "city", "fleet_size",
@@ -164,7 +165,6 @@ def _init_sheets():
             if len(header) == 0:
                 sheet.insert_row(wanted, 1)
             else:
-                # Overwrite header to keep it simple
                 sheet.delete_rows(1)
                 sheet.insert_row(wanted, 1)
 
@@ -198,14 +198,27 @@ def save_response_to_sheet(row: Dict[str, Any]) -> bool:
         log.exception("Append to sheet failed: %s", e)
         return False
 
+
+# ---------- Survey Definition ----------
+SURVEY_KEYS: List[Dict[str, Any]] = [
+    {"key": "company",        "text_key": "q_company",       "type": "text"},
+    {"key": "city",           "text_key": "q_city",          "type": "text"},
+    {"key": "fleet_size",     "text_key": "q_fleet",         "type": "text"},
+    {"key": "lead_channels",  "text_key": "q_leads",         "type": "text"},
+    {"key": "features",       "text_key": "q_features",      "type": "multiselect"},
+    {"key": "pilot_interest", "text_key": "q_pilot",         "type": "choice", "options": ["Да", "Нет"]},
+    {"key": "contact_name",   "text_key": "q_contact_name",  "type": "text"},
+    {"key": "contact_phone",  "text_key": "q_contact_phone", "type": "phone"},
+]
+
+
 # ---------- Bot / Dispatcher ----------
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
-# Per-user state storage (simple in-memory dict)
-# In production consider redis storage for horizontal scaling.
+# Simple in-memory per-user state
 STATE: Dict[int, Dict[str, Any]] = {}
 
 def get_user_state(user_id: int) -> Dict[str, Any]:
@@ -223,14 +236,17 @@ def set_lang(user_id: int, lang: str):
         lang = "ru"
     get_user_state(user_id)["lang"] = lang
 
+
 # ---------- Keyboards ----------
-def kb_lang_choice():
+def kb_lang_choice() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=TEXTS["ru"]["lang_ru"], callback_data="lang:ru"),
-         InlineKeyboardButton(text=TEXTS["uz"]["lang_uz"], callback_data="lang:uz")]
+        [
+            InlineKeyboardButton(text=TEXTS["ru"]["lang_ru"], callback_data="lang:ru"),
+            InlineKeyboardButton(text=TEXTS["uz"]["lang_uz"], callback_data="lang:uz"),
+        ]
     ])
 
-def kb_main(lang: str):
+def kb_main(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=text_for(lang, "main_take_survey"), callback_data="start_survey")],
         [InlineKeyboardButton(text=text_for(lang, "main_leave_contact"), callback_data="leave_contact")],
@@ -247,17 +263,20 @@ def kb_features(selected: set, options: List[str], lang: str) -> InlineKeyboardM
 
 def kb_yes_no(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=text_for(lang, "yes"), callback_data="choice:Да"),
-         InlineKeyboardButton(text=text_for(lang, "no"), callback_data="choice:Нет")],
-        [InlineKeyboardButton(text=text_for(lang, "cancel"), callback_data="cancel")]
+        [
+            InlineKeyboardButton(text=text_for(lang, "yes"), callback_data="choice:Да"),
+            InlineKeyboardButton(text=text_for(lang, "no"),  callback_data="choice:Нет"),
+        ],
+        [InlineKeyboardButton(text=text_for(lang, "cancel"), callback_data="cancel")],
     ])
 
 def kb_request_contact(lang: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=text_for(lang, "phone_button"), request_contact=True)]],
         resize_keyboard=True,
-        one_time_keyboard=True
+        one_time_keyboard=True,
     )
+
 
 # ---------- Handlers ----------
 @router.message(Command("start"))
@@ -320,7 +339,7 @@ async def cmd_cancel(message: Message):
 @router.callback_query(F.data == "leave_contact")
 async def cb_leave_contact(call: CallbackQuery):
     st = get_user_state(call.from_user.id)
-    st["q"] = len(SURVEY_KEYS) - 2  # к contact_name
+    st["q"] = len(SURVEY_KEYS) - 2  # перейти к contact_name
     await call.message.answer(text_for(get_lang(call.from_user.id), "q_contact_name"))
     await call.answer()
 
@@ -339,7 +358,8 @@ async def on_text(message: Message):
     st = get_user_state(message.from_user.id)
     lang = get_lang(message.from_user.id)
     if "q" not in st:
-        await cmd_start(message); return
+        await cmd_start(message)
+        return
 
     q_idx = st["q"]
     if q_idx >= len(SURVEY_KEYS):
@@ -353,6 +373,7 @@ async def on_text(message: Message):
         st["answers"][q["key"]] = message.text.strip()
         st["q"] += 1
         await ask_next_question(message.from_user.id, message)
+
     elif typ == "choice":
         val = message.text.strip()
         if val not in ["Да", "Нет"]:
@@ -360,13 +381,15 @@ async def on_text(message: Message):
             return
         st["answers"][q["key"]] = val
         st["q"] += 1
-        await message.answer(f"{text_for(lang,'ans')}: <b>{val}</b>")
+        await message.answer(f"{text_for(lang, 'ans')}: <b>{val}</b>")
         await ask_next_question(message.from_user.id, message)
+
     elif typ == "phone":
         st["answers"][q["key"]] = message.text.strip()
         st["q"] += 1
         await message.answer(text_for(lang, "thanks"), reply_markup=ReplyKeyboardRemove())
         await ask_next_question(message.from_user.id, message)
+
     else:
         await message.answer(text_for(lang, "press_buttons"))
 
@@ -375,12 +398,15 @@ async def cb_toggle_feature(call: CallbackQuery):
     st = get_user_state(call.from_user.id)
     q = SURVEY_KEYS[st["q"]]
     if q["type"] != "multiselect":
-        await call.answer(); return
+        await call.answer()
+        return
+
     opt = call.data.split(":", 1)[1]
     if opt in st["features_selected"]:
         st["features_selected"].remove(opt)
     else:
         st["features_selected"].add(opt)
+
     lang = get_lang(call.from_user.id)
     await call.message.edit_reply_markup(
         reply_markup=kb_features(st["features_selected"], FEATURES[lang], lang)
@@ -402,11 +428,13 @@ async def cb_choice(call: CallbackQuery):
     st = get_user_state(call.from_user.id)
     q = SURVEY_KEYS[st["q"]]
     if q["type"] != "choice":
-        await call.answer(); return
+        await call.answer()
+        return
+
     _, val = call.data.split(":", 1)  # "Да" | "Нет"
     st["answers"][q["key"]] = val
     st["q"] += 1
-    await call.message.answer(f"{text_for(get_lang(call.from_user.id),'ans')}: <b>{val}</b>")
+    await call.message.answer(f"{text_for(get_lang(call.from_user.id), 'ans')}: <b>{val}</b>")
     await ask_next_question(call.from_user.id, call.message)
     await call.answer()
 
@@ -416,134 +444,15 @@ async def cb_cancel(call: CallbackQuery):
     await call.message.answer(text_for(get_lang(call.from_user.id), "cancelled"), reply_markup=ReplyKeyboardRemove())
     await call.answer()
 
-@router.callback_query(F.data == "leave_contact")
-async def cb_leave_contact(call: CallbackQuery):
-    st = get_user_state(call.from_user.id)
-    st["q"] = len(SURVEY) - 2  # Jump to contact_name
-    await call.message.answer("Оставьте, пожалуйста, контактное лицо (ФИО).")
-    await call.answer()
-
-async def ask_next_question(user_id: int, message: Message):
-    st = get_user_state(user_id)
-    q_idx = st["q"]
-    if q_idx >= len(SURVEY):
-        await finish_survey(user_id, message)
-        return
-
-    q = SURVEY[q_idx]
-    t = q["text"]
-    typ = q["type"]
-
-    if typ == "multiselect":
-        await message.answer(t, reply_markup=kb_features(st["features_selected"], q["options"]))
-    elif typ == "choice":
-        await message.answer(t, reply_markup=kb_yes_no())
-    elif typ == "phone":
-        await message.answer(t, reply_markup=kb_request_contact())
-    else:
-        await message.answer(t)
-
-@router.message(F.content_type == ContentType.CONTACT)
-async def on_contact(message: Message):
-    st = get_user_state(message.from_user.id)
-    q = SURVEY[st["q"]]
-    if q["type"] == "phone":
-        st["answers"][q["key"]] = message.contact.phone_number
-        st["q"] += 1
-        await message.answer("Спасибо! 👍", reply_markup=ReplyKeyboardRemove())
-        await ask_next_question(message.from_user.id, message)
-
-@router.message(F.text)
-async def on_text(message: Message):
-    st = get_user_state(message.from_user.id)
-    if "q" not in st:
-        await cmd_start(message)
-        return
-
-    q_idx = st["q"]
-    if q_idx >= len(SURVEY):
-        await message.answer("Мы уже закончили опрос. Нажмите /start, чтобы начать заново.")
-        return
-
-    q = SURVEY[q_idx]
-    typ = q["type"]
-
-    if typ in ("text",):
-        st["answers"][q["key"]] = message.text.strip()
-        st["q"] += 1
-        await ask_next_question(message.from_user.id, message)
-    elif typ == "choice":
-        # If user types instead of pressing a button
-        val = message.text.strip()
-        if val not in q["options"]:
-            await message.answer("Пожалуйста, нажмите кнопку «Да» или «Нет».")
-            return
-        st["answers"][q["key"]] = val
-        st["q"] += 1
-        await ask_next_question(message.from_user.id, message)
-    elif typ == "phone":
-        # Accept free-form phone text
-        st["answers"][q["key"]] = message.text.strip()
-        st["q"] += 1
-        await message.answer("Спасибо! 👍", reply_markup=ReplyKeyboardRemove())
-        await ask_next_question(message.from_user.id, message)
-    else:
-        await message.answer("Нажмите, пожалуйста, кнопки под сообщением.")
-
-@router.callback_query(F.data.startswith("feat:"))
-async def cb_toggle_feature(call: CallbackQuery):
-    st = get_user_state(call.from_user.id)
-    q = SURVEY[st["q"]]
-    if q["type"] != "multiselect":
-        await call.answer()
-        return
-
-    opt = call.data.split(":", 1)[1]
-    if opt in st["features_selected"]:
-        st["features_selected"].remove(opt)
-    else:
-        st["features_selected"].add(opt)
-
-    await call.message.edit_reply_markup(reply_markup=kb_features(st["features_selected"], q["options"]))
-    await call.answer("Обновлено")
-
-@router.callback_query(F.data == "feat_done")
-async def cb_feature_done(call: CallbackQuery):
-    st = get_user_state(call.from_user.id)
-    q = SURVEY[st["q"]]
-    st["answers"][q["key"]] = ", ".join(st["features_selected"]) if st["features_selected"] else ""
-    st["q"] += 1
-    await call.message.answer("Принято ✅")
-    await ask_next_question(call.from_user.id, call.message)
-    await call.answer()
-
-@router.callback_query(F.data.startswith("choice:"))
-async def cb_choice(call: CallbackQuery):
-    st = get_user_state(call.from_user.id)
-    q = SURVEY[st["q"]]
-    if q["type"] != "choice":
-        await call.answer()
-        return
-
-    _, val = call.data.split(":", 1)
-    st["answers"][q["key"]] = val
-    st["q"] += 1
-    await call.message.answer(f"Ответ: <b>{val}</b>")
-    await ask_next_question(call.from_user.id, call.message)
-    await call.answer()
-
-@router.callback_query(F.data == "cancel")
-async def cb_cancel(call: CallbackQuery):
-    STATE.pop(call.from_user.id, None)
-    await call.message.answer("Окей, остановил опрос. Возвращайтесь, когда будет удобно.", reply_markup=ReplyKeyboardRemove())
-    await call.answer()
 
 async def finish_survey(user_id: int, message: Message):
     st = get_user_state(user_id)
     answers = st.get("answers", {})
-    # Persist to Google Sheets (if configured)
+    lang = get_lang(user_id)
+
     row = {
         "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+        "lang": lang,
         "user_id": user_id,
         "username": f"@{message.from_user.username}" if message.from_user.username else "",
         "company": answers.get("company", ""),
@@ -556,13 +465,11 @@ async def finish_survey(user_id: int, message: Message):
         "contact_phone": answers.get("contact_phone", ""),
     }
     ok = save_response_to_sheet(row)
-    await message.answer(text_for(lang, "saved_ok") if ok else text_for(lang, "saved_local"),
-                         reply_markup=ReplyKeyboardRemove())
 
     # Fallback: save to local CSV if Sheets not available
     if not ok:
         try:
-            import csv, os
+            import csv
             exists = os.path.exists("responses.csv")
             with open("responses.csv", "a", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(f, fieldnames=list(row.keys()))
@@ -574,10 +481,9 @@ async def finish_survey(user_id: int, message: Message):
             log.exception("Local CSV write failed: %s", e)
 
     STATE.pop(user_id, None)
-    if ok:
-        await message.answer("Спасибо! Ваши ответы сохранены. Мы свяжемся с вами по итогам беты 🙌", reply_markup=ReplyKeyboardRemove())
-    else:
-        await message.answer("Спасибо! Ответы получены. (Не смог записать в таблицу — сохраняю у себя. Мы всё равно свяжемся.)", reply_markup=ReplyKeyboardRemove())
+    msg = text_for(lang, "saved_ok") if ok else text_for(lang, "saved_local")
+    await message.answer(msg, reply_markup=ReplyKeyboardRemove())
+
 
 # ---------- FastAPI (webhook) ----------
 app = FastAPI()
@@ -593,13 +499,13 @@ async def telegram_webhook(request: Request):
     await dp.feed_update(bot, update)
     return {"ok": True}
 
-# универсальный эндпоинт для установки вебхука (мы добавляли раньше)
 @app.api_route("/set-webhook", methods=["GET", "POST"])
 async def set_webhook():
     if not BASE_URL:
         return {"ok": False, "error": "BASE_URL is not set"}
     await bot.set_webhook(f"{BASE_URL}/webhook", drop_pending_updates=True)
     return {"ok": True, "url": f"{BASE_URL}/webhook"}
+
 
 # ---------- Local dev entry (polling) ----------
 if __name__ == "__main__":
@@ -608,4 +514,3 @@ if __name__ == "__main__":
         log.info("Starting polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     asyncio.run(_main())
-
