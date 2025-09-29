@@ -309,15 +309,140 @@ async def cb_start_survey(call: CallbackQuery):
     st["q"] = 0
     st["answers"] = {}
     st["features_selected"] = set()
-
-    await call.message.answer("Начнём! Можно остановиться в любой момент командой /cancel.")
+    lang = get_lang(call.from_user.id)
+    await call.message.answer(text_for(lang, "survey_intro"))
     await ask_next_question(call.from_user.id, call.message)
     await call.answer()
+
+async def ask_next_question(user_id: int, message: Message):
+    st = get_user_state(user_id)
+    lang = get_lang(user_id)
+    q_idx = st["q"]
+    if q_idx >= len(SURVEY_KEYS):
+        await finish_survey(user_id, message)
+        return
+
+    q = SURVEY_KEYS[q_idx]
+    t = text_for(lang, q["text_key"])
+    typ = q["type"]
+
+    if typ == "multiselect":
+        await message.answer(t, reply_markup=kb_features(st["features_selected"], FEATURES[lang], lang))
+    elif typ == "choice":
+        await message.answer(t, reply_markup=kb_yes_no(lang))
+    elif typ == "phone":
+        await message.answer(t, reply_markup=kb_request_contact(lang))
+    else:
+        await message.answer(t)
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message):
     STATE.pop(message.from_user.id, None)
-    await message.answer("Окей, остановил опрос. Возвращайтесь, когда будет удобно.", reply_markup=ReplyKeyboardRemove())
+    await message.answer(text_for(get_lang(message.from_user.id), "cancelled"), reply_markup=ReplyKeyboardRemove())
+
+@router.callback_query(F.data == "leave_contact")
+async def cb_leave_contact(call: CallbackQuery):
+    st = get_user_state(call.from_user.id)
+    st["q"] = len(SURVEY_KEYS) - 2  # к вопросу "contact_name"
+    await call.message.answer(text_for(get_lang(call.from_user.id), "q_contact_name"))
+    await call.answer()
+
+@router.message(F.content_type == ContentType.CONTACT)
+async def on_contact(message: Message):
+    st = get_user_state(message.from_user.id)
+    q = SURVEY_KEYS[st["q"]]
+    if q["type"] == "phone":
+        st["answers"][q["key"]] = message.contact.phone_number
+        st["q"] += 1
+        await message.answer(text_for(get_lang(message.from_user.id), "thanks"), reply_markup=ReplyKeyboardRemove())
+        await ask_next_question(message.from_user.id, message)
+
+@router.message(F.text)
+async def on_text(message: Message):
+    st = get_user_state(message.from_user.id)
+    lang = get_lang(message.from_user.id)
+    if "q" not in st:
+        await cmd_start(message)
+        return
+
+    q_idx = st["q"]
+    if q_idx >= len(SURVEY_KEYS):
+        await message.answer("Опрос завершён. Нажмите /start, чтобы начать заново.")
+        return
+
+    q = SURVEY_KEYS[q_idx]
+    typ = q["type"]
+
+    if typ == "text":
+        st["answers"][q["key"]] = message.text.strip()
+        st["q"] += 1
+        await ask_next_question(message.from_user.id, message)
+    elif typ == "choice":
+        val = message.text.strip()
+        if val not in q["options"]:
+            await message.answer(text_for(lang, "press_buttons"))
+            return
+        st["answers"][q["key"]] = val
+        st["q"] += 1
+        await message.answer(f"{text_for(lang,'ans')}: <b>{val}</b>")
+        await ask_next_question(message.from_user.id, message)
+    elif typ == "phone":
+        st["answers"][q["key"]] = message.text.strip()
+        st["q"] += 1
+        await message.answer(text_for(lang, "thanks"), reply_markup=ReplyKeyboardRemove())
+        await ask_next_question(message.from_user.id, message)
+    else:
+        await message.answer(text_for(lang, "press_buttons"))
+
+@router.callback_query(F.data.startswith("feat:"))
+async def cb_toggle_feature(call: CallbackQuery):
+    st = get_user_state(call.from_user.id)
+    q = SURVEY_KEYS[st["q"]]
+    if q["type"] != "multiselect":
+        await call.answer()
+        return
+
+    opt = call.data.split(":", 1)[1]
+    if opt in st["features_selected"]:
+        st["features_selected"].remove(opt)
+    else:
+        st["features_selected"].add(opt)
+
+    await call.message.edit_reply_markup(
+        reply_markup=kb_features(st["features_selected"], FEATURES[get_lang(call.from_user.id)], get_lang(call.from_user.id))
+    )
+    await call.answer("OK")
+
+@router.callback_query(F.data == "feat_done")
+async def cb_feature_done(call: CallbackQuery):
+    st = get_user_state(call.from_user.id)
+    q = SURVEY_KEYS[st["q"]]
+    st["answers"][q["key"]] = ", ".join(st["features_selected"]) if st["features_selected"] else ""
+    st["q"] += 1
+    await call.message.answer(text_for(get_lang(call.from_user.id), "done_ok"))
+    await ask_next_question(call.from_user.id, call.message)
+    await call.answer()
+
+@router.callback_query(F.data.startswith("choice:"))
+async def cb_choice(call: CallbackQuery):
+    st = get_user_state(call.from_user.id)
+    q = SURVEY_KEYS[st["q"]]
+    if q["type"] != "choice":
+        await call.answer()
+        return
+
+    _, val = call.data.split(":", 1)  # "Да" или "Нет"
+    st["answers"][q["key"]] = val
+    st["q"] += 1
+    await call.message.answer(f"{text_for(get_lang(call.from_user.id),'ans')}: <b>{val}</b>")
+    await ask_next_question(call.from_user.id, call.message)
+    await call.answer()
+
+@router.callback_query(F.data == "cancel")
+async def cb_cancel(call: CallbackQuery):
+    STATE.pop(call.from_user.id, None)
+    await call.message.answer(text_for(get_lang(call.from_user.id), "cancelled"), reply_markup=ReplyKeyboardRemove())
+    await call.answer()
 
 @router.callback_query(F.data == "leave_contact")
 async def cb_leave_contact(call: CallbackQuery):
