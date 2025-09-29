@@ -157,7 +157,7 @@ def _init_sheets():
         # Ensure header row exists
         header = sheet.row_values(1)
         wanted = [
-            "timestamp", "user_id", "username", "company", "city", "fleet_size",
+            "timestamp", "lang", "user_id", "username", "company", "city", "fleet_size",
             "lead_channels", "features", "pilot_interest", "contact_name", "contact_phone"
         ]
         if header != wanted:
@@ -181,6 +181,7 @@ def save_response_to_sheet(row: Dict[str, Any]) -> bool:
     try:
         sheet.append_row([
             row.get("timestamp", ""),
+            row.get("lang", ""),
             str(row.get("user_id", "")),
             row.get("username", ""),
             row.get("company", ""),
@@ -196,29 +197,6 @@ def save_response_to_sheet(row: Dict[str, Any]) -> bool:
     except Exception as e:
         log.exception("Append to sheet failed: %s", e)
         return False
-
-# ---------- Survey Definition ----------
-# You can edit these without touching the logic.
-FEATURES = [
-    "Онлайн-оплата (Click/Payme)",
-    "Рейтинг клиентов (скоринг)",
-    "Аналитика и отчёты",
-    "Админ-панель в Telegram",
-    "API/1C интеграции",
-    "Видимость в агрегаторе (витрина)",
-]
-
-SURVEY_KEYS: List[Dict[str, Any]] = [
-    {"key": "company", "text_key": "q_company", "type": "text"},
-    {"key": "city", "text_key": "q_city", "type": "text"},
-    {"key": "fleet_size", "text_key": "q_fleet", "type": "text"},
-    {"key": "lead_channels", "text_key": "q_leads", "type": "text"},
-    {"key": "features", "text_key": "q_features", "type": "multiselect"},
-    {"key": "pilot_interest", "text_key": "q_pilot", "type": "choice", "options": ["Да", "Нет"]},
-    {"key": "contact_name", "text_key": "q_contact_name", "type": "text"},
-    {"key": "contact_phone", "text_key": "q_contact_phone", "type": "phone"},
-]
-
 
 # ---------- Bot / Dispatcher ----------
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -285,7 +263,6 @@ def kb_request_contact(lang: str) -> ReplyKeyboardMarkup:
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     st = get_user_state(message.from_user.id)
-    # Если язык ещё не выбран — показываем выбор
     if st.get("lang") not in LANGS:
         await message.answer(text_for("ru", "choose_lang"), reply_markup=kb_lang_choice())
         return
@@ -343,7 +320,7 @@ async def cmd_cancel(message: Message):
 @router.callback_query(F.data == "leave_contact")
 async def cb_leave_contact(call: CallbackQuery):
     st = get_user_state(call.from_user.id)
-    st["q"] = len(SURVEY_KEYS) - 2  # к вопросу "contact_name"
+    st["q"] = len(SURVEY_KEYS) - 2  # к contact_name
     await call.message.answer(text_for(get_lang(call.from_user.id), "q_contact_name"))
     await call.answer()
 
@@ -362,8 +339,7 @@ async def on_text(message: Message):
     st = get_user_state(message.from_user.id)
     lang = get_lang(message.from_user.id)
     if "q" not in st:
-        await cmd_start(message)
-        return
+        await cmd_start(message); return
 
     q_idx = st["q"]
     if q_idx >= len(SURVEY_KEYS):
@@ -379,7 +355,7 @@ async def on_text(message: Message):
         await ask_next_question(message.from_user.id, message)
     elif typ == "choice":
         val = message.text.strip()
-        if val not in q["options"]:
+        if val not in ["Да", "Нет"]:
             await message.answer(text_for(lang, "press_buttons"))
             return
         st["answers"][q["key"]] = val
@@ -399,17 +375,15 @@ async def cb_toggle_feature(call: CallbackQuery):
     st = get_user_state(call.from_user.id)
     q = SURVEY_KEYS[st["q"]]
     if q["type"] != "multiselect":
-        await call.answer()
-        return
-
+        await call.answer(); return
     opt = call.data.split(":", 1)[1]
     if opt in st["features_selected"]:
         st["features_selected"].remove(opt)
     else:
         st["features_selected"].add(opt)
-
+    lang = get_lang(call.from_user.id)
     await call.message.edit_reply_markup(
-        reply_markup=kb_features(st["features_selected"], FEATURES[get_lang(call.from_user.id)], get_lang(call.from_user.id))
+        reply_markup=kb_features(st["features_selected"], FEATURES[lang], lang)
     )
     await call.answer("OK")
 
@@ -428,10 +402,8 @@ async def cb_choice(call: CallbackQuery):
     st = get_user_state(call.from_user.id)
     q = SURVEY_KEYS[st["q"]]
     if q["type"] != "choice":
-        await call.answer()
-        return
-
-    _, val = call.data.split(":", 1)  # "Да" или "Нет"
+        await call.answer(); return
+    _, val = call.data.split(":", 1)  # "Да" | "Нет"
     st["answers"][q["key"]] = val
     st["q"] += 1
     await call.message.answer(f"{text_for(get_lang(call.from_user.id),'ans')}: <b>{val}</b>")
@@ -584,6 +556,8 @@ async def finish_survey(user_id: int, message: Message):
         "contact_phone": answers.get("contact_phone", ""),
     }
     ok = save_response_to_sheet(row)
+    await message.answer(text_for(lang, "saved_ok") if ok else text_for(lang, "saved_local"),
+                         reply_markup=ReplyKeyboardRemove())
 
     # Fallback: save to local CSV if Sheets not available
     if not ok:
