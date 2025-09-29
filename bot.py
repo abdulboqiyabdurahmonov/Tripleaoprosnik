@@ -224,7 +224,8 @@ STATE: Dict[int, Dict[str, Any]] = {}
 def get_user_state(user_id: int) -> Dict[str, Any]:
     st = STATE.get(user_id)
     if not st:
-        st = {"q": 0, "answers": {}, "features_selected": set(), "lang": "ru"}
+        # было: "lang": "ru"
+        st = {"q": 0, "answers": {}, "features_selected": set(), "lang": None}
         STATE[user_id] = st
     return st
 
@@ -282,10 +283,10 @@ def kb_request_contact(lang: str) -> ReplyKeyboardMarkup:
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     st = get_user_state(message.from_user.id)
-    if st.get("lang") not in LANGS:
+    if not st.get("lang"):
         await message.answer(text_for("ru", "choose_lang"), reply_markup=kb_lang_choice())
         return
-    lang = get_lang(message.from_user.id)
+    lang = st["lang"]
     await message.answer(text_for(lang, "start_msg"), reply_markup=kb_main(lang))
 
 @router.message(Command("lang"))
