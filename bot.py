@@ -284,11 +284,24 @@ def kb_request_contact(lang: str) -> ReplyKeyboardMarkup:
 # ---------- Handlers ----------
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    await message.answer(
-        "Привет! Мы готовим платформу, которая помогает автопаркам получать клиентов напрямую.\n"
-        "Хотим учесть ваши пожелания — ответьте на пару вопросов 🙌",
-        reply_markup=kb_main()
-    )
+    st = get_user_state(message.from_user.id)
+    # Если язык ещё не выбран — показываем выбор
+    if st.get("lang") not in LANGS:
+        await message.answer(text_for("ru", "choose_lang"), reply_markup=kb_lang_choice())
+        return
+    lang = get_lang(message.from_user.id)
+    await message.answer(text_for(lang, "start_msg"), reply_markup=kb_main(lang))
+
+@router.message(Command("lang"))
+async def cmd_lang(message: Message):
+    await message.answer(text_for(get_lang(message.from_user.id), "choose_lang"), reply_markup=kb_lang_choice())
+
+@router.callback_query(F.data.startswith("lang:"))
+async def cb_set_lang(call: CallbackQuery):
+    _, lang = call.data.split(":", 1)
+    set_lang(call.from_user.id, lang)
+    await call.message.answer(text_for(lang, "start_msg"), reply_markup=kb_main(lang))
+    await call.answer()
 
 @router.callback_query(F.data == "start_survey")
 async def cb_start_survey(call: CallbackQuery):
